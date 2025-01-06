@@ -1,14 +1,19 @@
 import * as MockDate from 'mockdate';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, DeepPartial } from 'typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { Order } from '../src/order/entity/order.entity';
+import { OrderStatus } from '../src/order/enum/order-status.enum';
+import { PaymentService } from '../src/payment/service/payment.service';
+import { PaymentResult } from '../src/payment/dto/payment-result.dto';
+import { CurrencyCode } from '../src/payment/enum/currency.enum';
 
 describe('OrderController (e2e)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
+  let paymentService: PaymentService;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -19,6 +24,7 @@ describe('OrderController (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe());
     await app.init();
     dataSource = app.get(DataSource);
+    paymentService = app.get(PaymentService);
   });
 
   const setTestNow = (time: string) => {
@@ -45,10 +51,20 @@ describe('OrderController (e2e)', () => {
     await app.close();
   });
 
-  const givenOrders = async (data: unknown[]): Promise<Order[]> => {
+  const givenOrders = async (data: DeepPartial<Order>[]): Promise<Order[]> => {
     const orderRepo = dataSource.getRepository(Order);
     const creationPromise = data.map((order) => orderRepo.save(order));
     return Promise.all(creationPromise);
+  };
+
+  const givenPaymentResult = (result: PaymentResult) => {
+    jest.spyOn(paymentService, 'pay').mockResolvedValueOnce(result);
+  };
+
+  const whenPaymentFailed = () => {
+    jest
+      .spyOn(paymentService, 'pay')
+      .mockRejectedValueOnce(new Error('Payment failed'));
   };
 
   describe('createOrder', () => {
@@ -87,7 +103,7 @@ describe('OrderController (e2e)', () => {
     });
 
     it('should return 400 when order is created already', async () => {
-      await givenOrders([[{ rentingHistoryId: 1, userId: 1, amount: 100 }]]);
+      await givenOrders([{ rentingHistoryId: 1, userId: 1, amount: 100 }]);
       await sendCreatingOrderApi({
         rentingHistoryId: 1,
         userId: 1,
@@ -109,7 +125,7 @@ describe('OrderController (e2e)', () => {
           rentingHistoryId: 1,
           userId: 1,
           amount: 100,
-          status: 'PENDING',
+          status: OrderStatus.PENDING,
           createdAt: now,
         });
     });
@@ -123,7 +139,7 @@ describe('OrderController (e2e)', () => {
     it('should return 400 when request invalid', async () => {
       const validRequests = {
         userId: 1,
-        status: 'PENDING',
+        status: OrderStatus.PENDING,
       };
 
       const requestWithInvalidField = [
@@ -142,34 +158,34 @@ describe('OrderController (e2e)', () => {
         {
           userId: 1,
           rentingHistoryId: 1,
-          status: 'PENDING',
+          status: OrderStatus.PENDING,
           amount: 50,
           createdAt: new Date('2021-01-01T00:00:00.000Z'),
         },
         {
           userId: 1,
           rentingHistoryId: 2,
-          status: 'PENDING',
+          status: OrderStatus.PENDING,
           amount: 50,
           createdAt: new Date('2021-01-02T00:00:00.000Z'),
         },
         {
           userId: 2,
           rentingHistoryId: 3,
-          status: 'SUCCESS',
+          status: OrderStatus.SUCCESS,
           amount: 50,
           createdAt: new Date('2021-01-03T00:00:00.000Z'),
         },
         {
           userId: 2,
           rentingHistoryId: 4,
-          status: 'FAILED',
+          status: OrderStatus.FAILED,
           amount: 100,
           createdAt: new Date('2021-01-04T00:00:00.000Z'),
         },
       ]);
 
-      await sendSearchOrdersApi({ userId: 1, status: 'PENDING' })
+      await sendSearchOrdersApi({ userId: 1, status: OrderStatus.PENDING })
         .expect(200)
         .expect({
           total: 2,
@@ -177,14 +193,14 @@ describe('OrderController (e2e)', () => {
             {
               rentingHistoryId: 2,
               userId: 1,
-              status: 'PENDING',
+              status: OrderStatus.PENDING,
               amount: 50,
               createdAt: '2021-01-02T00:00:00.000Z',
             },
             {
               rentingHistoryId: 1,
               userId: 1,
-              status: 'PENDING',
+              status: OrderStatus.PENDING,
               amount: 50,
               createdAt: '2021-01-01T00:00:00.000Z',
             },
@@ -206,7 +222,7 @@ describe('OrderController (e2e)', () => {
             {
               rentingHistoryId: 3,
               userId: 2,
-              status: 'SUCCESS',
+              status: OrderStatus.SUCCESS,
               amount: 50,
               createdAt: '2021-01-03T00:00:00.000Z',
             },
@@ -216,6 +232,95 @@ describe('OrderController (e2e)', () => {
       await sendSearchOrdersApi({ userId: 3 }).expect(200).expect({
         total: 0,
         orders: [],
+      });
+    });
+  });
+
+  describe('payOrder', () => {
+    const sendPayOrderApi = (orderId: number) => {
+      return request(app.getHttpServer()).post(`/order/${orderId}/pay`);
+    };
+
+    it('should return 404 when order does not exist', async () => {
+      await sendPayOrderApi(1).expect(404);
+    });
+
+    it('should return 400 when order is already paid', async () => {
+      const [order] = await givenOrders([
+        {
+          userId: 1,
+          rentingHistoryId: 1,
+          status: OrderStatus.SUCCESS,
+          amount: 100,
+          createdAt: new Date('2021-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      await sendPayOrderApi(order.id).expect(400);
+    });
+
+    it('should return 200 when order is paid successfully', async () => {
+      setTestNow('2021-01-01T00:00:00.000Z');
+
+      const [order] = await givenOrders([
+        {
+          userId: 1,
+          rentingHistoryId: 1,
+          status: OrderStatus.PENDING,
+          amount: 100,
+          createdAt: new Date('2021-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const id = order.id;
+
+      givenPaymentResult({
+        amount: 100,
+        currency: CurrencyCode.TWD,
+      });
+
+      await sendPayOrderApi(id).expect(200).expect({
+        orderNo: id.toString(),
+        totalPrice: 100,
+        currency: 'TWD',
+        payAt: '2021-01-01T00:00:00.000Z',
+        status: 'SUCCESS',
+      });
+
+      expect(paymentService.pay).toHaveBeenCalledWith({
+        amount: 100,
+        currency: CurrencyCode.TWD,
+      });
+    });
+
+    it('should return 200 and failed payment meta when any error from payment service', async () => {
+      setTestNow('2021-01-01T00:00:00.000Z');
+
+      const [order] = await givenOrders([
+        {
+          userId: 1,
+          rentingHistoryId: 1,
+          status: OrderStatus.PENDING,
+          amount: 100,
+          createdAt: new Date('2021-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const id = order.id;
+
+      whenPaymentFailed();
+
+      await sendPayOrderApi(id).expect(200).expect({
+        orderNo: id.toString(),
+        totalPrice: 100,
+        currency: 'TWD',
+        payAt: '2021-01-01T00:00:00.000Z',
+        status: 'FAILED',
+      });
+
+      expect(paymentService.pay).toHaveBeenCalledWith({
+        amount: 100,
+        currency: CurrencyCode.TWD,
       });
     });
   });
