@@ -1,8 +1,10 @@
+import { CurrencyCode } from '../enum/currency.enum';
+
 export class PaymentResult {
   amount: number;
-  currency: string;
+  currency: CurrencyCode;
 
-  constructor(amount: number, currency: string) {
+  constructor(amount: number, currency: CurrencyCode) {
     this.amount = amount;
     this.currency = currency;
   }

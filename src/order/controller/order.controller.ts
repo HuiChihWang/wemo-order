@@ -1,9 +1,18 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { OrderService } from '../service/order.service';
 import { OrderResponse } from '../response/order.response';
 import { CreateOrderRequest } from '../request/create-order.request';
 import { OrderListResponse } from '../response/order-list.response';
 import { SearchOrdersRequest } from '../request/search-orders.request';
+import { PayOrderResponse } from '../response/pay-order.response';
 
 @Controller('order')
 export class OrderController {
@@ -30,9 +39,12 @@ export class OrderController {
     return OrderListResponse.fromEntities(orders);
   }
 
-  @Post('pay/:orderId')
-  public async payOrder(@Param('orderId') orderId: number): Promise<string> {
-    await this.orderService.payOrder(orderId);
-    return 'success';
+  @Post(':orderId/pay')
+  @HttpCode(200)
+  public async payOrder(
+    @Param('orderId') orderId: number,
+  ): Promise<PayOrderResponse> {
+    const result = await this.orderService.payOrder(orderId);
+    return PayOrderResponse.from(result);
   }
 }

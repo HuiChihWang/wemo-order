@@ -9,6 +9,8 @@ import { PaymentService } from '../../payment/service/payment.service';
 import { CurrencyCode } from '../../payment/enum/currency.enum';
 import { SearchOrdersRequest } from '../request/search-orders.request';
 import { OrderStatus } from '../enum/order-status.enum';
+import { PayOrderResult } from '../dto/pay-order-result.dto';
+import { PaymentResult } from '../../payment/dto/payment-result.dto';
 
 @Injectable()
 export class OrderService {
@@ -54,7 +56,7 @@ export class OrderService {
     });
   }
 
-  public async payOrder(orderId: number): Promise<void> {
+  public async payOrder(orderId: number): Promise<PayOrderResult> {
     const order = await this.orderRepository.findOneBy({ id: orderId });
     if (!order) {
       throw new NotFoundException('Order does not exist');
@@ -65,16 +67,33 @@ export class OrderService {
     }
 
     const amount = order.amount;
+    let paymentResult: PaymentResult;
     try {
-      const paymentResult = await this.paymentService.pay({
+      paymentResult = await this.paymentService.pay({
         amount,
         currency: CurrencyCode.TWD,
       });
     } catch {
-      throw new BadRequestException('Payment failed');
+      return {
+        userId: order.userId,
+        orderId: order.id,
+        amount: order.amount,
+        currency: CurrencyCode.TWD,
+        payAt: new Date(),
+        status: 'FAILED',
+      };
     }
 
     order.status = OrderStatus.SUCCESS;
     await this.orderRepository.save(order);
+
+    return {
+      userId: order.userId,
+      orderId: order.id,
+      amount: paymentResult.amount,
+      currency: paymentResult.currency,
+      payAt: new Date(),
+      status: 'SUCCESS',
+    };
   }
 }
