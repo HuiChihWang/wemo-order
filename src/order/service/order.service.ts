@@ -10,12 +10,13 @@ import { CurrencyCode } from '../../payment/enum/currency.enum';
 import { SearchOrdersRequest } from '../request/search-orders.request';
 import { OrderStatus } from '../enum/order-status.enum';
 import { PayOrderResult } from '../dto/pay-order-result.dto';
-import { PaymentResult } from '../../payment/dto/payment-result.dto';
+import { OrderNoGeneratorUtility } from '../utility/order-no-generator.utility';
 
 @Injectable()
 export class OrderService {
   constructor(
     private readonly orderRepository: OrderRepository,
+    private readonly orderNoGeneratorUtility: OrderNoGeneratorUtility,
     private readonly paymentService: PaymentService,
   ) {}
 
@@ -36,6 +37,7 @@ export class OrderService {
     return this.orderRepository.save({
       userId,
       rentingHistoryId: rentingId,
+      orderNo: this.orderNoGeneratorUtility.generateOrderNo(),
       amount,
       createdAt: new Date(),
     });
@@ -56,8 +58,8 @@ export class OrderService {
     });
   }
 
-  public async payOrder(orderId: number): Promise<PayOrderResult> {
-    const order = await this.orderRepository.findOneBy({ id: orderId });
+  public async payOrder(orderNo: string): Promise<PayOrderResult> {
+    const order = await this.orderRepository.findOneBy({ orderNo: orderNo });
     if (!order) {
       throw new NotFoundException('Order does not exist');
     }
@@ -66,34 +68,26 @@ export class OrderService {
       throw new BadRequestException('Order is already paid');
     }
 
-    const amount = order.amount;
-    let paymentResult: PaymentResult;
+    const paymentResultCommon = {
+      userId: order.userId,
+      orderNo: order.orderNo,
+      amount: order.amount,
+      currency: CurrencyCode.TWD,
+      payAt: new Date(),
+    };
+
     try {
-      paymentResult = await this.paymentService.pay({
-        amount,
+      await this.paymentService.pay({
+        amount: order.amount,
         currency: CurrencyCode.TWD,
       });
     } catch {
-      return {
-        userId: order.userId,
-        orderId: order.id,
-        amount: order.amount,
-        currency: CurrencyCode.TWD,
-        payAt: new Date(),
-        status: 'FAILED',
-      };
+      return { ...paymentResultCommon, status: 'FAILED' };
     }
 
     order.status = OrderStatus.SUCCESS;
     await this.orderRepository.save(order);
 
-    return {
-      userId: order.userId,
-      orderId: order.id,
-      amount: paymentResult.amount,
-      currency: paymentResult.currency,
-      payAt: new Date(),
-      status: 'SUCCESS',
-    };
+    return { ...paymentResultCommon, status: 'SUCCESS' };
   }
 }

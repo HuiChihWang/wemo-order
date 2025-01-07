@@ -12,6 +12,9 @@ export class Order {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Column({ name: 'order_no', unique: true, length: 50 })
+  orderNo: string;
+
   @Column({ name: 'user_id' })
   userId: number;
 

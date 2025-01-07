@@ -9,10 +9,12 @@ import { OrderStatus } from '../src/order/enum/order-status.enum';
 import { PaymentService } from '../src/payment/service/payment.service';
 import { PaymentResult } from '../src/payment/dto/payment-result.dto';
 import { CurrencyCode } from '../src/payment/enum/currency.enum';
+import { OrderNoGeneratorUtility } from '../src/order/utility/order-no-generator.utility';
 
 describe('OrderController (e2e)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
+  let orderNoGeneratorUtility: OrderNoGeneratorUtility;
   let paymentService: PaymentService;
 
   beforeEach(async () => {
@@ -25,6 +27,7 @@ describe('OrderController (e2e)', () => {
     await app.init();
     dataSource = app.get(DataSource);
     paymentService = app.get(PaymentService);
+    orderNoGeneratorUtility = app.get(OrderNoGeneratorUtility);
   });
 
   const setTestNow = (time: string) => {
@@ -55,6 +58,12 @@ describe('OrderController (e2e)', () => {
     const orderRepo = dataSource.getRepository(Order);
     const creationPromise = data.map((order) => orderRepo.save(order));
     return Promise.all(creationPromise);
+  };
+
+  const givenGeneratedOrderNo = (orderNo: string) => {
+    jest
+      .spyOn(orderNoGeneratorUtility, 'generateOrderNo')
+      .mockReturnValue(orderNo);
   };
 
   const givenPaymentResult = (result: PaymentResult) => {
@@ -103,7 +112,9 @@ describe('OrderController (e2e)', () => {
     });
 
     it('should return 400 when order is created already', async () => {
-      await givenOrders([{ rentingHistoryId: 1, userId: 1, amount: 100 }]);
+      await givenOrders([
+        { rentingHistoryId: 1, userId: 1, amount: 100, orderNo: '1' },
+      ]);
       await sendCreatingOrderApi({
         rentingHistoryId: 1,
         userId: 1,
@@ -115,6 +126,7 @@ describe('OrderController (e2e)', () => {
       const now = '2021-01-01T00:00:00.000Z';
       setTestNow(now);
 
+      givenGeneratedOrderNo('ORDER_TEST');
       await sendCreatingOrderApi({
         rentingHistoryId: 1,
         userId: 1,
@@ -123,6 +135,7 @@ describe('OrderController (e2e)', () => {
         .expect(201)
         .expect({
           rentingHistoryId: 1,
+          orderNo: 'ORDER_TEST',
           userId: 1,
           amount: 100,
           status: OrderStatus.PENDING,
@@ -156,6 +169,7 @@ describe('OrderController (e2e)', () => {
     it('should return 200 when orders are found', async () => {
       await givenOrders([
         {
+          orderNo: 'ORDER_1',
           userId: 1,
           rentingHistoryId: 1,
           status: OrderStatus.PENDING,
@@ -163,6 +177,7 @@ describe('OrderController (e2e)', () => {
           createdAt: new Date('2021-01-01T00:00:00.000Z'),
         },
         {
+          orderNo: 'ORDER_2',
           userId: 1,
           rentingHistoryId: 2,
           status: OrderStatus.PENDING,
@@ -170,6 +185,7 @@ describe('OrderController (e2e)', () => {
           createdAt: new Date('2021-01-02T00:00:00.000Z'),
         },
         {
+          orderNo: 'ORDER_3',
           userId: 2,
           rentingHistoryId: 3,
           status: OrderStatus.SUCCESS,
@@ -177,6 +193,7 @@ describe('OrderController (e2e)', () => {
           createdAt: new Date('2021-01-03T00:00:00.000Z'),
         },
         {
+          orderNo: 'ORDER_4',
           userId: 2,
           rentingHistoryId: 4,
           status: OrderStatus.FAILED,
@@ -191,6 +208,7 @@ describe('OrderController (e2e)', () => {
           total: 2,
           orders: [
             {
+              orderNo: 'ORDER_2',
               rentingHistoryId: 2,
               userId: 1,
               status: OrderStatus.PENDING,
@@ -198,6 +216,7 @@ describe('OrderController (e2e)', () => {
               createdAt: '2021-01-02T00:00:00.000Z',
             },
             {
+              orderNo: 'ORDER_1',
               rentingHistoryId: 1,
               userId: 1,
               status: OrderStatus.PENDING,
@@ -213,6 +232,7 @@ describe('OrderController (e2e)', () => {
           total: 2,
           orders: [
             {
+              orderNo: 'ORDER_4',
               rentingHistoryId: 4,
               userId: 2,
               status: 'FAILED',
@@ -220,6 +240,7 @@ describe('OrderController (e2e)', () => {
               createdAt: '2021-01-04T00:00:00.000Z',
             },
             {
+              orderNo: 'ORDER_3',
               rentingHistoryId: 3,
               userId: 2,
               status: OrderStatus.SUCCESS,
@@ -237,17 +258,18 @@ describe('OrderController (e2e)', () => {
   });
 
   describe('payOrder', () => {
-    const sendPayOrderApi = (orderId: number) => {
-      return request(app.getHttpServer()).post(`/order/${orderId}/pay`);
+    const sendPayOrderApi = (orderNo: string) => {
+      return request(app.getHttpServer()).post(`/order/${orderNo}/pay`);
     };
 
     it('should return 404 when order does not exist', async () => {
-      await sendPayOrderApi(1).expect(404);
+      await sendPayOrderApi('TEST_ORDER_NO').expect(404);
     });
 
     it('should return 400 when order is already paid', async () => {
-      const [order] = await givenOrders([
+      await givenOrders([
         {
+          orderNo: 'ORDER_1',
           userId: 1,
           rentingHistoryId: 1,
           status: OrderStatus.SUCCESS,
@@ -256,14 +278,15 @@ describe('OrderController (e2e)', () => {
         },
       ]);
 
-      await sendPayOrderApi(order.id).expect(400);
+      await sendPayOrderApi('ORDER_1').expect(400);
     });
 
     it('should return 200 when order is paid successfully', async () => {
       setTestNow('2021-01-01T00:00:00.000Z');
 
-      const [order] = await givenOrders([
+      await givenOrders([
         {
+          orderNo: 'ORDER_1',
           userId: 1,
           rentingHistoryId: 1,
           status: OrderStatus.PENDING,
@@ -272,15 +295,13 @@ describe('OrderController (e2e)', () => {
         },
       ]);
 
-      const id = order.id;
-
       givenPaymentResult({
         amount: 100,
         currency: CurrencyCode.TWD,
       });
 
-      await sendPayOrderApi(id).expect(200).expect({
-        orderNo: id.toString(),
+      await sendPayOrderApi('ORDER_1').expect(200).expect({
+        orderNo: 'ORDER_1',
         totalPrice: 100,
         currency: 'TWD',
         payAt: '2021-01-01T00:00:00.000Z',
@@ -296,8 +317,9 @@ describe('OrderController (e2e)', () => {
     it('should return 200 and failed payment meta when any error from payment service', async () => {
       setTestNow('2021-01-01T00:00:00.000Z');
 
-      const [order] = await givenOrders([
+      await givenOrders([
         {
+          orderNo: 'ORDER_1',
           userId: 1,
           rentingHistoryId: 1,
           status: OrderStatus.PENDING,
@@ -306,12 +328,10 @@ describe('OrderController (e2e)', () => {
         },
       ]);
 
-      const id = order.id;
-
       whenPaymentFailed();
 
-      await sendPayOrderApi(id).expect(200).expect({
-        orderNo: id.toString(),
+      await sendPayOrderApi('ORDER_1').expect(200).expect({
+        orderNo: 'ORDER_1',
         totalPrice: 100,
         currency: 'TWD',
         payAt: '2021-01-01T00:00:00.000Z',

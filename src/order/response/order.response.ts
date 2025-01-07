@@ -4,6 +4,7 @@ import { OrderStatus } from '../enum/order-status.enum';
 export class OrderResponse {
   rentingHistoryId: number;
   userId: number;
+  orderNo: string;
   amount: number;
   status: OrderStatus;
   createdAt: Date;
@@ -13,6 +14,7 @@ export class OrderResponse {
     userId: number,
     amount: number,
     status: OrderStatus,
+    orderNo: string,
     createdAt: Date,
   ) {
     this.rentingHistoryId = rentingHistoryId;
@@ -20,6 +22,7 @@ export class OrderResponse {
     this.amount = amount;
     this.status = status;
     this.createdAt = createdAt;
+    this.orderNo = orderNo;
   }
 
   public static fromEntity(order: Order): OrderResponse {
@@ -28,6 +31,7 @@ export class OrderResponse {
       order.userId,
       order.amount,
       order.status,
+      order.orderNo,
       order.createdAt,
     );
   }

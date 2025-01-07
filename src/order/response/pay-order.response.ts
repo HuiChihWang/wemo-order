@@ -24,7 +24,7 @@ export class PayOrderResponse {
 
   public static from(data: PayOrderResult): PayOrderResponse {
     return new PayOrderResponse(
-      data.orderId.toString(),
+      data.orderNo,
       data.payAt,
       data.amount,
       data.currency,

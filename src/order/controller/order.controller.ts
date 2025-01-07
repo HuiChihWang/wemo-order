@@ -39,12 +39,12 @@ export class OrderController {
     return OrderListResponse.fromEntities(orders);
   }
 
-  @Post(':orderId/pay')
+  @Post(':orderNo/pay')
   @HttpCode(200)
   public async payOrder(
-    @Param('orderId') orderId: number,
+    @Param('orderNo') orderNo: string,
   ): Promise<PayOrderResponse> {
-    const result = await this.orderService.payOrder(orderId);
+    const result = await this.orderService.payOrder(orderNo);
     return PayOrderResponse.from(result);
   }
 }

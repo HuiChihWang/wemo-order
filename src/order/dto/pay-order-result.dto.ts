@@ -1,7 +1,7 @@
 import { CurrencyCode } from '../../payment/enum/currency.enum';
 
 export interface PayOrderResult {
-  orderId: number;
+  orderNo: string;
   userId: number;
   payAt: Date;
   amount: number;
