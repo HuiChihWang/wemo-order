@@ -3,12 +3,12 @@ LABEL authors="gilbert.wang"
 
 WORKDIR /app
 
-# Copy package files and install dependencies
-COPY package*.json ./
-RUN npm install --production
+# install nest cli
+RUN npm install -g @nestjs/cli
 
-# Copy the rest of the application code
+# Copy package files and install dependencies
 COPY . .
+RUN npm install --production
 
 # Build the NestJS app
 RUN npm run build
