@@ -45,6 +45,9 @@ describe('OrderController (e2e)', () => {
     `);
 
     for (const table of tables) {
+      if (table.tablename === 'migrations') {
+        continue;
+      }
       await dataSource.query(`TRUNCATE TABLE "${table.tablename}" CASCADE`);
     }
   });
@@ -113,7 +116,13 @@ describe('OrderController (e2e)', () => {
 
     it('should return 400 when order is created already', async () => {
       await givenOrders([
-        { rentingHistoryId: 1, userId: 1, amount: 100, orderNo: '1' },
+        {
+          rentingHistoryId: 1,
+          userId: 1,
+          amount: 100,
+          orderNo: '1',
+          status: OrderStatus.PENDING,
+        },
       ]);
       await sendCreatingOrderApi({
         rentingHistoryId: 1,

@@ -39,6 +39,7 @@ export class OrderService {
       rentingHistoryId: rentingId,
       orderNo: this.orderNoGeneratorUtility.generateOrderNo(),
       amount,
+      status: OrderStatus.PENDING,
       createdAt: new Date(),
     });
   }
